@@ -11,7 +11,13 @@
 #include <stdint.h>
 
 #define NROUNDS 24
-#define ROL(a, offset) (((a) << (offset)) ^ ((a) >> (64 - (offset))))
+#define ROL(a, offset) (((a) << (offset)) | ((a) >> (64 - (offset))))
+
+#if defined(__GNUC__) || defined(__clang__)
+#define ALWAYS_INLINE __attribute__((always_inline)) inline
+#else
+#define ALWAYS_INLINE inline
+#endif
 
 /*************************************************
  * Name:        load64
@@ -22,13 +28,14 @@
  *
  * Returns the loaded 64-bit unsigned integer
  **************************************************/
-static uint64_t load64(const uint8_t *x) {
-    uint64_t r = 0;
-    for (size_t i = 0; i < 8; ++i) {
-        r |= (uint64_t)x[i] << 8 * i;
-    }
-
+static ALWAYS_INLINE uint64_t load64(const uint8_t *x) {
+    uint64_t r;
+    __builtin_memcpy(&r, x, 8);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return __builtin_bswap64(r);
+#else
     return r;
+#endif
 }
 
 /*************************************************
@@ -39,10 +46,11 @@ static uint64_t load64(const uint8_t *x) {
  * Arguments:   - uint8_t *x: pointer to the output byte array
  *              - uint64_t u: input 64-bit unsigned integer
  **************************************************/
-static void store64(uint8_t *x, uint64_t u) {
-    for (size_t i = 0; i < 8; ++i) {
-        x[i] = (uint8_t)(u >> 8 * i);
-    }
+static ALWAYS_INLINE void store64(uint8_t *x, uint64_t u) {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    u = __builtin_bswap64(u);
+#endif
+    __builtin_memcpy(x, &u, 8);
 }
 
 /* Keccak round constants */
@@ -63,6 +71,7 @@ static const uint64_t KeccakF_RoundConstants[NROUNDS] = {
  *
  * Arguments:   - uint64_t *state: pointer to input/output Keccak state
  **************************************************/
+__attribute__((hot))
 static void KeccakF1600_StatePermute(uint64_t *state) {
     int round;
 
@@ -339,18 +348,20 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
  *              - uint8_t p: domain-separation byte for different
  *                                 Keccak-derived functions
  **************************************************/
+__attribute__((hot))
 static void keccak_absorb(uint64_t *s, uint32_t r, const uint8_t *m,
                           size_t mlen, uint8_t p) {
     size_t i;
     uint8_t t[200];
 
     /* Zero state */
-    for (i = 0; i < 25; ++i) {
-        s[i] = 0;
-    }
+    __builtin_memset(s, 0, 25 * sizeof(uint64_t));
 
     while (mlen >= r) {
-        for (i = 0; i < r / 8; ++i) {
+        uint32_t blocks = r / 8;
+        // Unroll based on common rates: 136/8=17 for SHAKE256, 168/8=21 for SHAKE128
+#pragma GCC unroll 4
+        for (i = 0; i < blocks; ++i) {
             s[i] ^= load64(m + 8 * i);
         }
 
@@ -359,15 +370,13 @@ static void keccak_absorb(uint64_t *s, uint32_t r, const uint8_t *m,
         m += r;
     }
 
-    for (i = 0; i < r; ++i) {
-        t[i] = 0;
-    }
-    for (i = 0; i < mlen; ++i) {
-        t[i] = m[i];
-    }
-    t[i] = p;
+    __builtin_memset(t, 0, r);
+    __builtin_memcpy(t, m, mlen);
+    t[mlen] = p;
     t[r - 1] |= 128;
-    for (i = 0; i < r / 8; ++i) {
+    uint32_t blocks = r / 8;
+#pragma GCC unroll 4
+    for (i = 0; i < blocks; ++i) {
         s[i] ^= load64(t + 8 * i);
     }
 }
@@ -387,9 +396,11 @@ static void keccak_absorb(uint64_t *s, uint32_t r, const uint8_t *m,
  **************************************************/
 static void keccak_squeezeblocks(uint8_t *h, size_t nblocks, uint64_t *s,
                                  uint32_t r) {
+    uint32_t blocks = r >> 3;
     while (nblocks > 0) {
         KeccakF1600_StatePermute(s);
-        for (size_t i = 0; i < (r >> 3); i++) {
+#pragma GCC unroll 4
+        for (size_t i = 0; i < blocks; i++) {
             store64(h + 8 * i, s[i]);
         }
         h += r;
@@ -408,12 +419,7 @@ static void keccak_squeezeblocks(uint8_t *h, size_t nblocks, uint64_t *s,
  *                that have not been permuted, or not-yet-squeezed bytes.
  **************************************************/
 static void keccak_inc_init(uint64_t *s_inc) {
-    size_t i;
-
-    for (i = 0; i < 25; ++i) {
-        s_inc[i] = 0;
-    }
-    s_inc[25] = 0;
+    __builtin_memset(s_inc, 0, 26 * sizeof(uint64_t));
 }
 
 /*************************************************
@@ -436,14 +442,30 @@ static void keccak_inc_absorb(uint64_t *s_inc, uint32_t r, const uint8_t *m,
 
     /* Recall that s_inc[25] is the non-absorbed bytes xored into the state */
     while (mlen + s_inc[25] >= r) {
-        for (i = 0; i < r - s_inc[25]; i++) {
+        size_t remaining = r - s_inc[25];
+
+        // Fast path: if aligned at 64-bit boundary
+        if (s_inc[25] == 0 && remaining == r) {
+            uint32_t blocks = r / 8;
+#pragma GCC unroll 4
+            for (i = 0; i < blocks; ++i) {
+                s_inc[i] ^= load64(m + 8 * i);
+            }
+            m += r;
+            mlen -= r;
+            KeccakF1600_StatePermute(s_inc);
+            continue;
+        }
+
+        // Slow path: handle unaligned data
+        for (i = 0; i < remaining; i++) {
             /* Take the i'th byte from message
                xor with the s_inc[25] + i'th byte of the state; little-endian */
             s_inc[(s_inc[25] + i) >> 3] ^= (uint64_t)m[i]
                                            << (8 * ((s_inc[25] + i) & 0x07));
         }
-        mlen -= (size_t)(r - s_inc[25]);
-        m += r - s_inc[25];
+        mlen -= remaining;
+        m += remaining;
         s_inc[25] = 0;
 
         KeccakF1600_StatePermute(s_inc);
@@ -587,8 +609,6 @@ void shake256(uint8_t *output, size_t outlen, const uint8_t *input,
 
     if (outlen) {
         shake256_squeezeblocks(t, 1, s);
-        for (size_t i = 0; i < outlen; ++i) {
-            output[i] = t[i];
-        }
+        __builtin_memcpy(output, t, outlen);
     }
 }
