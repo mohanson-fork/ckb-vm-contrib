@@ -115,6 +115,7 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
     Aso = state[23];
     Asu = state[24];
 
+#pragma GCC unroll 24
     for (round = 0; round < NROUNDS; round += 2) {
         //    prepareTheta
         BCa = Aba ^ Aga ^ Aka ^ Ama ^ Asa;
