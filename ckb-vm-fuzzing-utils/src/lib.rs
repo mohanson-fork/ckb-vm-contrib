@@ -382,6 +382,7 @@ where
                             &M::REG::from_u64(*fd),
                         )?;
                     }
+                    machine.memory_mut().store64(&length_addr, &M::REG::from_u64(wrote_length as u64))?;
                 }
                 self.set_return(result, machine);
             }
