@@ -457,7 +457,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-mock-tx-types"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "ckb-jsonrpc-types",
  "ckb-traits",
@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-script-size-analyzer"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "clap",
  "object",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-vm-differential-test"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "ckb-std 0.17.2",
  "ckb-vm 0.24.0",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-vm-fuzzing-utils"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "ckb-std 1.1.0",
  "ckb-vm 0.24.14",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-vm-syscall-tracer"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "ckb-chain-spec",
  "ckb-mock-tx-types",
@@ -729,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-vm-test-suite"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "ckb-vm 0.24.0",
  "criterion",
@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-x64-simulator"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "cc",
  "ckb-mock-tx-types",
@@ -1968,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "protobuf-ckb-syscalls"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "ckb-std 1.1.0",
  "ckb-vm 0.24.14",
